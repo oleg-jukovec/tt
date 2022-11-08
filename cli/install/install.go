@@ -337,12 +337,11 @@ func downloadRepo(repoLink string, tag string, dst string,
 	logFile *os.File, verbose bool) error {
 	var err error
 	if tag == "master" {
-		err = util.ExecuteCommand("git", verbose, logFile, dst, "clone",
-			"-j", "18", repoLink,
+		err = util.ExecuteCommand("git", verbose, logFile, dst, "clone", repoLink,
 			"--recursive", dst)
 	} else {
 		err = util.ExecuteCommand("git", verbose, logFile, dst, "clone", "-b", tag,
-			"--depth=1", "-j", "18", repoLink,
+			"--depth=1", repoLink,
 			"--recursive", dst)
 	}
 
