@@ -13,23 +13,7 @@ import (
 	"github.com/tarantool/tt/cli/search"
 )
 
-var (
-	Reinstall bool
-	Force     bool
-	Verbose   bool
-	Noclean   bool
-	Local     bool
-)
-
-func getInstallFlags() install.InstallationFlag {
-	return install.InstallationFlag{
-		Reinstall: Reinstall,
-		Force:     Force,
-		Verbose:   Verbose,
-		Noclean:   Noclean,
-		Local:     Local,
-	}
-}
+var installFlags install.InstallationFlag
 
 // NewInstallCmd creates install command.
 func NewInstallCmd() *cobra.Command {
@@ -49,12 +33,11 @@ func NewInstallCmd() *cobra.Command {
 			}
 		},
 	}
-	installCmd.Flags().BoolVarP(&Verbose, "verbose", "V", false, "print log to stderr")
-	installCmd.Flags().BoolVarP(&Force, "force", "f", false, "force requirements errors")
-	installCmd.Flags().BoolVarP(&Noclean, "no-clean", "", false,
+	installCmd.Flags().BoolVarP(&installFlags.Force, "force", "f", false, "force requirements errors")
+	installCmd.Flags().BoolVarP(&installFlags.Noclean, "no-clean", "", false,
 		"don't delete temporary files")
-	installCmd.Flags().BoolVarP(&Reinstall, "reinstall", "", false, "reinstall program")
-	installCmd.Flags().BoolVarP(&Local, "local-repo", "", false,
+	installCmd.Flags().BoolVarP(&installFlags.Reinstall, "reinstall", "", false, "reinstall program")
+	installCmd.Flags().BoolVarP(&installFlags.Local, "local-repo", "", false,
 		"install from local files")
 	return installCmd
 }
@@ -65,11 +48,13 @@ func internalInstallModule(cmdCtx *cmdcontext.CmdCtx, args []string) error {
 	if err != nil {
 		return err
 	}
-	flags := getInstallFlags()
+
 	if _, err := os.Stat(cmdCtx.Cli.ConfigPath); os.IsNotExist(err) {
 		return fmt.Errorf("There is no tarantool.yaml found, please create one")
 	}
-	err = install.Install(args, cliOpts.App.BinDir, cliOpts.App.IncludeDir+"/include", flags,
-		cliOpts.Repo.Install, cliOpts)
+
+	installFlags.Verbose = cmdCtx.Cli.Verbose
+	err = install.Install(args, cliOpts.App.BinDir, cliOpts.App.IncludeDir+"/include",
+		installFlags, cliOpts.Repo.Install, cliOpts)
 	return err
 }
