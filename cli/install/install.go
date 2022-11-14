@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -15,8 +16,11 @@ import (
 	"github.com/apex/log"
 	"github.com/otiai10/copy"
 	"github.com/tarantool/tt/cli/config"
+	"github.com/tarantool/tt/cli/configure"
+	"github.com/tarantool/tt/cli/docker"
 	"github.com/tarantool/tt/cli/install_ee"
 	"github.com/tarantool/tt/cli/search"
+	"github.com/tarantool/tt/cli/templates/engines"
 	"github.com/tarantool/tt/cli/util"
 	"github.com/tarantool/tt/cli/version"
 )
@@ -85,6 +89,8 @@ type InstallationFlag struct {
 	// Local is a flag. If it is set,
 	// install will do local installation.
 	Local bool
+	// BuildInDocker is set if tarantool must be built in docker container.
+	BuildInDocker bool
 }
 
 // Package is a struct containing sys and install name of the package.
@@ -643,9 +649,89 @@ func copyBuildedTarantool(binPath, incPath, binDir, includeDir, version string,
 	return err
 }
 
-// installTarantool installs selected version of tarantool.
-func installTarantool(version string, binDir string, incDir string, flags InstallationFlag,
+//go:embed Dockerfile.tnt.build
+var tarantoolBuildDockerfile []byte
+
+func installTarantoolInDocker(binDir string, incDir string, flags InstallationFlag,
 	distfiles string) error {
+	tmpDir, err := ioutil.TempDir("", "docker_build_ctx")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	currentUser, err := user.Current()
+	if err != nil {
+		return err
+	}
+
+	goTextEngine := engines.NewDefaultEngine()
+	dockerfileText, err := goTextEngine.RenderText(string(tarantoolBuildDockerfile),
+		map[string]string{"uid": currentUser.Uid})
+	if err != nil {
+		return err
+	}
+
+	// Write docker file (rw-rw-r-- permissions).
+	if err = ioutil.WriteFile(filepath.Join(tmpDir, "Dockerfile"), []byte(dockerfileText),
+		0664); err != nil {
+		return err
+	}
+
+	// Copy tt executable.
+	if currentExecutable, err := os.Executable(); err != nil {
+		return err
+	} else {
+		if err = copy.Copy(currentExecutable, filepath.Join(tmpDir, "tt")); err != nil {
+			return nil
+		}
+	}
+
+	ttCfg := util.GenerateDefaulTtEnvConfig()
+	ttCfg.CliConfig.App.BinDir = "/tt_bin"
+	ttCfg.CliConfig.App.IncludeDir = "/tt_include"
+	ttCfg.CliConfig.Repo.Install = "/tt_distfiles"
+	if err = util.WriteYaml(filepath.Join(tmpDir, configure.ConfigName), ttCfg); err != nil {
+		return err
+	}
+
+	tntInstallCommandLine := []string{"./tt"}
+	for _, arg := range os.Args[1:] {
+		if arg == "--use-docker" {
+			continue
+		}
+		tntInstallCommandLine = append(tntInstallCommandLine, arg)
+	}
+
+	dockerRunOptions := docker.RunOptions{
+		BuildCtxDir: tmpDir,
+		ImageTag:    "ubuntu:tnt_build",
+		Command:     tntInstallCommandLine,
+		Binds: []string{
+			fmt.Sprintf("%s:%s", binDir, ttCfg.CliConfig.App.BinDir),
+			fmt.Sprintf("%s:%s", incDir, ttCfg.CliConfig.App.IncludeDir),
+			fmt.Sprintf("%s:%s", distfiles, ttCfg.CliConfig.Repo.Install),
+		},
+		Verbose: flags.Verbose,
+	}
+	if err = docker.RunContainer(dockerRunOptions, os.Stdout); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// installTarantool installs selected version of tarantool.
+func installTarantool(version string, binDir string, incDir string,
+	flags InstallationFlag, distfiles string) error {
+	// Check bin and header dirs.
+	if binDir == "" {
+		return fmt.Errorf("BinDir is not set, check tarantool.yaml ")
+	}
+	if incDir == "" {
+		return fmt.Errorf("IncludeDir is not set, check tarantool.yaml")
+	}
+
 	versions, err := getTarantoolVersions(flags.Local, distfiles)
 	if err != nil {
 		return err
@@ -677,13 +763,21 @@ func installTarantool(version string, binDir string, incDir string, flags Instal
 		}
 	}
 
-	// Check bin and header dirs.
-	if binDir == "" {
-		return fmt.Errorf("BinDir is not set, check tarantool.yaml ")
+	version = "tarantool" + search.VersionFsSeparator + tarVersion
+	// Check if program is already installed.
+	if !flags.Reinstall {
+		log.Infof("Checking existing...")
+		versionExists, err := checkExistingTarantool(version,
+			binDir, incDir, flags)
+		if err != nil || versionExists {
+			return err
+		}
 	}
-	if incDir == "" {
-		return fmt.Errorf("IncludeDir is not set, check tarantool.yaml")
+
+	if flags.BuildInDocker {
+		return installTarantoolInDocker(binDir, incDir, flags, distfiles)
 	}
+
 	logFile, err := ioutil.TempFile("", "tarantool_install")
 	if err != nil {
 		return err
@@ -697,17 +791,6 @@ func installTarantool(version string, binDir string, incDir string, flags Instal
 		log.Infof("Checking dependencies...")
 		if !programDependenciesInstalled("tarantool") {
 			return nil
-		}
-	}
-
-	version = "tarantool" + search.VersionFsSeparator + tarVersion
-	// Check if program is already installed.
-	if !flags.Reinstall {
-		log.Infof("Checking existing...")
-		versionExists, err := checkExistingTarantool(version,
-			binDir, incDir, flags)
-		if err != nil || versionExists {
-			return err
 		}
 	}
 

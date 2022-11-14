@@ -33,12 +33,16 @@ func NewInstallCmd() *cobra.Command {
 			}
 		},
 	}
-	installCmd.Flags().BoolVarP(&installFlags.Force, "force", "f", false, "force requirements errors")
+	installCmd.Flags().BoolVarP(&installFlags.Force, "force", "f", false,
+		"force requirements errors")
 	installCmd.Flags().BoolVarP(&installFlags.Noclean, "no-clean", "", false,
 		"don't delete temporary files")
-	installCmd.Flags().BoolVarP(&installFlags.Reinstall, "reinstall", "", false, "reinstall program")
+	installCmd.Flags().BoolVarP(&installFlags.Reinstall, "reinstall", "", false,
+		"reinstall program")
 	installCmd.Flags().BoolVarP(&installFlags.Local, "local-repo", "", false,
 		"install from local files")
+	installCmd.Flags().BoolVarP(&installFlags.BuildInDocker, "use-docker", "", false,
+		"build tarantool in Ubuntu 16.04 docker container")
 	return installCmd
 }
 
