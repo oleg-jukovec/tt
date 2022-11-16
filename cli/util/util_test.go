@@ -456,3 +456,79 @@ func TestGetYamlFileName(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, filepath.Join(tempDir, "tarantool.yaml"), fileName)
 }
+
+func TestCheckTemplateCompletion(t *testing.T) {
+	type args struct {
+		templateString string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "Filled template",
+			args: args{templateString: "Some test text"},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return err == nil
+			},
+		},
+		{
+			name: "Bad filled template",
+			args: args{templateString: "<no value>"},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return err != nil
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.wantErr(t, CheckTemplateCompletion(tt.args.templateString),
+				fmt.Sprintf("CheckTemplateCompletion(%v)", tt.args.templateString))
+		})
+	}
+}
+
+func TestInstantiateFileFromTemplate(t *testing.T) {
+	testDir := t.TempDir()
+	templatePath := filepath.Join(testDir, "template.txt")
+	templateContent := "{{ .TestName }}"
+	type args struct {
+		unitPath     string
+		unitTemplate string
+		ctx          map[string]interface{}
+	}
+	tests := []struct {
+		name            string
+		args            args
+		wantErr         assert.ErrorAssertionFunc
+		expectedContent string
+	}{
+		{
+			name: "Sample template file",
+			args: args{
+				unitPath:     templatePath,
+				unitTemplate: templateContent,
+				ctx: map[string]interface{}{
+					"TestName": 1,
+				},
+			},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return err != nil
+			},
+			expectedContent: "1",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.wantErr(t, InstantiateFileFromTemplate(tt.args.unitPath,
+				tt.args.unitTemplate, tt.args.ctx),
+				fmt.Sprintf("InstantiateFileFromTemplate(%v, %v, %v)",
+					tt.args.unitPath, tt.args.unitTemplate, tt.args.ctx))
+
+			content, err := ioutil.ReadFile(tt.args.unitPath)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedContent, string(content))
+		})
+	}
+}

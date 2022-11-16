@@ -893,3 +893,33 @@ func GetYamlFileName(fileName string, mustExist bool) (string, error) {
 
 	return "", os.ErrNotExist
 }
+
+// CheckTemplateCompletion checks if there are incomplete fields in the passed template.
+func CheckTemplateCompletion(templateContent string) error {
+	if strings.Contains(templateContent, "<no value>") {
+		return fmt.Errorf("The passed template cannot be filled fully. " +
+			"There are missed some fields.")
+	}
+	return nil
+}
+
+// InstantiateFileFromTemplate accepts the path to file,
+// template content and parameters for its filling.
+func InstantiateFileFromTemplate(unitPath string, unitTemplate string,
+	ctx map[string]interface{}) error {
+	appUnit, err := os.Create(unitPath)
+	if err != nil {
+		return err
+	}
+
+	unitContent, err := GetTextTemplatedStr(&unitTemplate, ctx)
+	if err != nil {
+		return err
+	}
+
+	_, err = appUnit.WriteString(unitContent)
+	if err != nil {
+		return err
+	}
+	return nil
+}
