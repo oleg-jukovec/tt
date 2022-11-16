@@ -25,16 +25,13 @@ const (
 
 	debianBinaryFileName = "debian-binary"
 
-	// This is a prefix where the bundle will be located after unpacking.
-	debBundlePath = "usr/share/tarantool/%s"
-
 	debianBinaryFileContent = "2.0\n"
-
-	defaultPackageName = "bundle.deb"
 
 	PreInstScriptName  = "preinst"
 	PostInstScriptName = "postinst"
 )
+
+var defaultEnvPrefix = filepath.Join("usr", "share", "tarantool")
 
 // debPacker is a structure that implements Packer interface
 // with specific deb packing behavior.
@@ -88,15 +85,13 @@ func (packer *debPacker) Run(cmdCtx *cmdcontext.CmdCtx, packCtx *PackCtx,
 
 	log.Info("Creating a data directory")
 
-	// Create a data directory.
-	rootPrefixDir := dataDirName
-	rootPrefix := filepath.Join(rootPrefixDir, debBundlePath)
-
 	packageName, err := getPackageName(packCtx, opts, "", false)
 	if err != nil {
 		return err
 	}
-	rootPrefix = fmt.Sprintf(rootPrefix, packageName)
+
+	rootPrefix := filepath.Join(dataDirName, defaultEnvPrefix, packageName)
+	packageDataDir := filepath.Join(packageDir, dataDirName)
 
 	log.Debugf("Initialize the app directory for prefix: %s", rootPrefix)
 
@@ -105,6 +100,13 @@ func (packer *debPacker) Run(cmdCtx *cmdcontext.CmdCtx, packCtx *PackCtx,
 	if err != nil {
 		return err
 	}
+
+	envSystemPath := filepath.Join("/", defaultEnvPrefix, packageName)
+	err = initSystemdDir(packCtx, opts, packageDataDir, envSystemPath)
+	if err != nil {
+		return err
+	}
+
 	// App directory.
 	if err = copy.Copy(bundlePath, packagePrefixedPath); err != nil {
 		return err
@@ -112,7 +114,7 @@ func (packer *debPacker) Run(cmdCtx *cmdcontext.CmdCtx, packCtx *PackCtx,
 
 	// Create data.tar.gz.
 	dataArchivePath := filepath.Join(packageDir, dataArchiveName)
-	err = WriteTgzArchive(filepath.Join(packageDir, rootPrefixDir), dataArchivePath)
+	err = WriteTgzArchive(packageDataDir, dataArchivePath)
 	if err != nil {
 		return err
 	}
